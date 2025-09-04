@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::time::Instant;
 // CONFIG
 const N: usize = 10000; // domain
@@ -9,8 +9,8 @@ const SIGMA: f64 = 100.; //gaussian pulse width
 const CFL: f64 = 0.99; // <1 for stability
 const THROTTLE: usize = 50; //writes to csv every n frames
 
-fn main() {
-    let (params, mut wave) = initialize();
+fn main() -> Result<(), String> {
+    let (params, mut wave) = initialize().expect("FAILED TO INITIALIZE COMPOUND WAVE");
     let mut t: usize = 0;
     let start = Instant::now();
     loop {
@@ -25,30 +25,33 @@ fn main() {
             params.h_coef,
         );
         if t % THROTTLE == 0 {
-            write_file(t, &mut wave.electric, &mut wave.magnetic).expect("file writing failed");
+            write_file(t, &mut wave.electric, &mut wave.magnetic).expect("FAILED TO WRITE FILE");
         }
     }
     let elapsed = start.elapsed().as_secs_f64();
 
     println!("Simulation time: {}", elapsed);
+    Ok(())
 }
 
 const MU0: f64 = 1.2566370614359173e-6;
 const C: f64 = 299.792458e6;
 const E0: f64 = 8.854187817620389e-12;
 
+#[derive(Debug)]
 struct Wave {
     electric: [f64; N],
     magnetic: [f64; N - 1],
 }
 
+#[derive(Debug)]
 struct Params {
     steps: usize,
     e_coef: f64,
     h_coef: f64,
 }
 
-fn initialize() -> (Params, Wave) {
+fn initialize() -> Result<(Params, Wave), String> {
     let dt: f64 = CFL * DZ / C;
     let params = Params {
         steps: (N as f32 * L) as usize,
@@ -56,20 +59,20 @@ fn initialize() -> (Params, Wave) {
         h_coef: dt / (MU0 * DZ),
     };
     let wave = Wave {
-        electric: gaussian(N as f64 / 2., SIGMA),
+        electric: gaussian(N as f64 / 2., SIGMA).expect("FAILED TO INITIALIZE GAUSSIAN"),
         magnetic: [0.; N - 1],
     };
-    (params, wave)
+    Ok((params, wave))
 }
 
-fn gaussian(mean: f64, sigma: f64) -> [f64; N] {
+fn gaussian(mean: f64, sigma: f64) -> Result<[f64; N], String> {
     let magic_number = -1. / (2. * sigma.powi(2));
     let mut arr = [0.; N];
     for i in 0..N {
         let x = i as f64;
         arr[i] = ((x - mean).powi(2) * magic_number).exp();
     }
-    arr
+    Ok(arr)
 }
 
 fn update(ex: &mut [f64; N], hy: &mut [f64; N - 1], e_coef: f64, h_coef: f64) {
@@ -86,14 +89,19 @@ fn update(ex: &mut [f64; N], hy: &mut [f64; N - 1], e_coef: f64, h_coef: f64) {
 }
 
 fn write_file(step: usize, ex: &[f64; N], hy: &[f64; N - 1]) -> std::io::Result<()> {
-    let filename = format!("data/frame_{:05}.csv", step);
-    let mut file = File::create(filename)?;
-    writeln!(file, "type,value")?;
-    for val in ex {
-        writeln!(file, "E,{}", val)?;
+    let filename = format!("data/frame_{:05}.bin", step);
+    let file = File::create(filename)?;
+    let mut writer = BufWriter::new(file);
+
+    for &val in ex {
+        writer.write_all(&val.to_le_bytes())?;
     }
-    for val in hy {
-        writeln!(file, "H,{}", val)?;
+
+    for &val in hy {
+        writer.write_all(&val.to_le_bytes())?;
     }
+
+    writer.flush()?;
+
     Ok(())
 }

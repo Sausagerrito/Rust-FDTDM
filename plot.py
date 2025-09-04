@@ -1,17 +1,21 @@
+import struct
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import numpy as np
 import glob
-import os
 
-# Get all CSV frames, sort by timestep number
-files = sorted(glob.glob("data/frame_*.csv"))
+# Must match Rust constants
+N = 10000
+frame_size = N*8 + (N-1)*8  # bytes per file
+
+# Get all bin files, sort by timestep number
+files = sorted(glob.glob("data/frame_*.bin"))
 
 fig, ax = plt.subplots(figsize=(10, 5))
 line_e, = ax.plot([], [], color='blue', label='Electric Field (E)')
 line_h, = ax.plot([], [], color='red', label='Magnetic Field (H)')
 
-ax.set_xlim(0, 10000)  # will auto-adjust later
+ax.set_xlim(0, N)
 ax.set_ylim(-1, 1)
 ax.set_xlabel('Cell index')
 ax.set_ylabel('Field amplitude')
@@ -23,16 +27,26 @@ def init():
     line_h.set_data([], [])
     return line_e, line_h
 
+def read_bin_file(filename):
+    """Read a single frame bin file (ex, hy)."""
+    with open(filename, "rb") as f:
+        buf = f.read()
+        if len(buf) < frame_size:
+            raise ValueError(f"Incomplete frame in {filename}")
+        offset = 0
+        ex = np.frombuffer(buf, dtype="<f8", count=N, offset=offset).copy()
+        offset += N * 8
+        hy = np.frombuffer(buf, dtype="<f8", count=N-1, offset=offset).copy()
+    return ex, hy
+
 def animate(file):
-    data = np.loadtxt(file, delimiter=",", skiprows=1, dtype=str)
-    values_e = data[data[:,0] == "E", 1].astype(float)
-    values_h = data[data[:,0] == "H", 1].astype(float)
+    ex, hy = read_bin_file(file)
 
-    x_e = np.arange(len(values_e))
-    x_h = np.arange(len(values_h))
+    x_e = np.arange(len(ex))
+    x_h = np.arange(len(hy))
 
-    line_e.set_data(x_e, values_e)
-    line_h.set_data(x_h, values_h * 100)
+    line_e.set_data(x_e, ex)
+    line_h.set_data(x_h, hy * 100)  # keep scaling factor
     return line_e, line_h
 
 ani = animation.FuncAnimation(
