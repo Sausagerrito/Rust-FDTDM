@@ -11,8 +11,6 @@ Other parameters need to be tweaked for a successful simulation:
 ## TODO
 !!! Make domain and file names auto-config based on N.
 
-!! Change the data format from csv to binary
-
 !! Automate things such as clearing the data folder, running plot.py
 
 ! Begin 2D
